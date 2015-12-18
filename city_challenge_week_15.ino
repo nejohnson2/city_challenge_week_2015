@@ -1,18 +1,10 @@
 /*
- * City Challenge Week 2015
- *
- * DHT 22
- * Wire (BLK) - Gnd
- * Wire (RED) - +5v
- * Wire (YLW) - Pin 3
+ * City Challenge Week 2015 - Temp/Hum/AQ
  *
  * Groove Dust Sensor
  * Wire (BLK) - Gnd
  * Wire (RED) - +5v
  * Wire (YLW) - Pin 2
- *
- * MEMS Microphone (3.3v)
- * Anolog Read - A0
  *
  * SD Card
  * MOSI - Pin 11
@@ -20,6 +12,11 @@
  * CLK  - Pin 13
  * CS   - Pin 9
  *
+ * HTU21D-F Humidity & Temp Sensor
+ * Vin - +5v
+ * GND - GND
+ * SCL - SCL
+ * SDA - SDA
  */
 
 // SD Card Libraries
@@ -35,7 +32,7 @@ File dataFile;
 DHT dht(DHTPIN, DHTTYPE);
 
 // Real Time Clock
-#include <Wire.h>
+#include <Wire.h> //also for Temp/hum sensor
 #include "RTClib.h"
 RTC_DS1307 RTC;
 
@@ -48,71 +45,69 @@ unsigned long lowpulseoccupancy = 0;
 float ratio = 0;
 float concentration = 0;
 
+// Temp Humidity
+#include "Adafruit_HTU21DF.h"
+Adafruit_HTU21DF htu = Adafruit_HTU21DF();
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(19200);
+
   dht.begin();
   if (initSD()) {
   }
 
   Wire.begin();
-  RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));
+  
   if (! RTC.isrunning()) {
     Serial.println("Real Time Clock not Running");
+    RTC.adjust(DateTime(F(__DATE__), F(__TIME__)));    
   }
-
+  
+  if (!htu.begin()) {
+    Serial.println("Couldn't find sensor!");
+    while (1);
+  }
   // For Dust Sensor
   starttime = millis();
 }
 
 void loop() {
   DateTime now = RTC.now();
-  //duration = pulseIn(pin, LOW, 250000); //timeout is in micro seconds
+  duration = pulseIn(pin, LOW); //timeout is in micro seconds
   lowpulseoccupancy = lowpulseoccupancy + duration;
-  
+
   if ((millis() - starttime) > sampletime_ms) //if the sampel time == 30s
   {
     ratio = lowpulseoccupancy / (sampletime_ms * 10.0); // Integer percentage 0=>100
     concentration = 1.1 * pow(ratio, 3) - 3.8 * pow(ratio, 2) + 520 * ratio + 0.62; // using spec sheet curve
     lowpulseoccupancy = 0;
     starttime = millis();
+
+    String dataString = ""; // create blank string to write to SD
+
+    dataString += concentration;
+    dataString += ",";
+    dataString += now.month();
+    dataString += "/";
+    dataString += now.day();
+    dataString += ",";
+
+    dataString += now.hour();
+    dataString += ":";
+    dataString += now.minute();
+    dataString += ":";
+    dataString += now.second();
+    dataString += ",";
+
+    dataString += htu.readTemperature();
+    dataString += ",";
+    dataString += htu.readHumidity();
+    
+    Serial.println(dataString);
+    dataFile.println(dataString);
+    dataFile.flush();
   }
-
-  // put your main code here, to run repeatedly:
-  float audio = analogRead(A0);
-
-  // Reading temperature or humidity takes about 250 milliseconds!
-  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-  float h = dht.readHumidity();
-  // Read temperature as Celsius (the default)
-  float t = dht.readTemperature();
-
-  String dataString = ""; // create blank string to write to SD
-
-//  dataString += concentration;
-//  dataString += ",";
-//  dataString += now.month();
-//  dataString += "/";
-//  dataString += now.day();
-//  dataString += ",";
-
-  dataString += now.hour();
-  dataString += ":";
-  dataString += now.minute();
-  dataString += ":";
-  dataString += now.second();
-  dataString += ",";
-
-//  dataString += h;
-//  dataString += ",";  
-//  dataString += t;
-//  dataString += ",";
-  dataString += audio;
-
-  //Serial.println(dataString);
-  dataFile.println(dataString);
-  dataFile.flush();
-  
 }
 
 boolean initSD() {
